@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yearly Simulation</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body {
+            margin-top: 40px;
+            background-color: #f8f9fa;
+        }
+        .info-box {
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            background-color: #ffffff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mb-4">Yearly Simulation</h1>
+
+        <!-- Information Display -->
+        <div class="info-box">
+            <h3>Year {{ data.year + 1 }}</h3>
+            <p><strong>Current Portfolio Value:</strong> ${{ '{:,.2f}'.format(data.portfolio_amount) }}</p>
+            <p><strong>Target Withdrawal Amount:</strong> ${{ '{:,.2f}'.format(data.target_withdrawal) }}</p>
+            <p><strong>Value of Amount on Margin:</strong> ${{ '{:,.2f}'.format(data.portfolio_amount * 0.5) }}</p>
+        </div>
+
+        <!-- User Input Form -->
+        <form action="/yearly" method="post">
+            <div class="form-group">
+                <label for="withdrawal">How much will you withdraw? (Whole numbers only)</label>
+                <input type="number" class="form-control" id="withdrawal" name="withdrawal" min="0" required>
+            </div>
+
+            <div class="form-group">
+                <label for="margin_percent">How much of the portfolio will you put on margin to increase your market exposure? (in %)</label>
+                <input type="number" class="form-control" id="margin_percent" name="margin_percent" min="0" max="50" step="0.1" required>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Submit</button>
+        </form>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>

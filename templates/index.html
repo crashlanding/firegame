@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monte Carlo Retirement Simulation</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body {
+            margin-top: 40px;
+            background-color: #f8f9fa;
+        }
+        .slider-label {
+            margin-bottom: 10px;
+        }
+        .slider-value {
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mb-4">Monte Carlo Retirement Simulation</h1>
+        <form action="/" method="post">
+            <!-- Initial Portfolio Amount -->
+            <div class="form-group">
+                <label class="slider-label" for="portfolio_amount">Initial Portfolio Amount ($):</label>
+                <input type="range" class="form-control-range" id="portfolio_amount" name="portfolio_amount" min="0" max="1000000000" step="100000" value="1000000" oninput="portfolioAmountOutput.value = portfolio_amount.value">
+                <output id="portfolioAmountOutput" class="slider-value">1000000</output>
+            </div>
+
+            <!-- Average Annual Return -->
+            <div class="form-group">
+                <label class="slider-label" for="avg_annual_return">Average Annual Return (%):</label>
+                <input type="range" class="form-control-range" id="avg_annual_return" name="avg_annual_return" min="1" max="20" step="0.1" value="5" oninput="annualReturnOutput.value = avg_annual_return.value">
+                <output id="annualReturnOutput" class="slider-value">5</output>
+            </div>
+
+            <!-- Volatility -->
+            <div class="form-group">
+                <label class="slider-label" for="volatility">Volatility (%):</label>
+                <input type="range" class="form-control-range" id="volatility" name="volatility" min="1" max="50" step="0.1" value="10" oninput="volatilityOutput.value = volatility.value">
+                <output id="volatilityOutput" class="slider-value">10</output>
+            </div>
+
+            <!-- Inflation -->
+            <div class="form-group">
+                <label for="inflation">Inflation Rate (%):</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="inflation" id="inflation2" value="2" checked>
+                    <label class="form-check-label" for="inflation2">2%</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="inflation" id="inflation3" value="3">
+                    <label class="form-check-label" for="inflation3">3%</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="inflation" id="inflation5" value="5">
+                    <label class="form-check-label" for="inflation5">5%</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="inflation" id="inflation10" value="10">
+                    <label class="form-check-label" for="inflation10">10%</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="inflation" id="inflationRandom" value="random">
+                    <label class="form-check-label" for="inflationRandom">Random (1%-15%)</label>
+                </div>
+            </div>
+
+            <!-- Time Horizon -->
+            <div class="form-group">
+                <label for="time_horizon">Time Horizon (years):</label>
+                <input type="number" class="form-control" id="time_horizon" name="time_horizon" min="10" max="100" value="30" required>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" class="btn btn-primary">Simulate</button>
+        </form>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>
