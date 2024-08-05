@@ -5,43 +5,9 @@ matplotlib.use('Agg')  # Use non-GUI backend for rendering plots in Flask
 import matplotlib.pyplot as plt
 import io
 import base64
-import os  # Import os module for environment variables
 
-# Initialize the Flask application
 app = Flask(__name__)
-
-# Set a secret key for session management
-app.secret_key = os.environ.get('SECRET_KEY', 'default_secret_key')
-
-# Define a route
-@app.route('/')
-def home():
-    return "Hello, Heroku!"  # Simple test to ensure routing works
-
-# Additional route for plotting example
-@app.route('/plot')
-def plot():
-    # Sample plot
-    plt.figure(figsize=(5, 4))
-    plt.plot([1, 2, 3, 4], [10, 20, 25, 30])
-    plt.title("Sample Plot")
-
-    # Convert plot to PNG image
-    img = io.BytesIO()
-    plt.savefig(img, format='png')
-    img.seek(0)
-
-    # Encode PNG image to base64 string
-    plot_url = base64.b64encode(img.getvalue()).decode('utf8')
-
-    return render_template('plot.html', plot_url=plot_url)
-
-# Main entry point for running the app locally
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))  # Use the port provided by Heroku
-    app.run(host='0.0.0.0', port=port)
-
-
+app.secret_key = 'your_secret_key_here'  # Set a secret key for session management
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
