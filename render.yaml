@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: stock-earnings-alerts
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true          # Render generates a secure random key
+      - key: DATABASE_PATH
+        value: /opt/render/project/src/firegame.db
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false                  # You supply this in the Render dashboard
+      - key: SMTP_PASSWORD
+        sync: false                  # You supply this in the Render dashboard
+      - key: SMTP_FROM
+        sync: false                  # Same as SMTP_USER

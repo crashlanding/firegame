@@ -44,7 +44,19 @@ def _fmt_yoy(change):
     return f'<span class="{cls}">{arrow} {sign}{change:.1f}%</span>'
 
 
-app.jinja_env.globals.update(fmt_rev=_fmt_rev, fmt_yoy=_fmt_yoy)
+def _days_until(date_str):
+    """Return integer days between today and a date string (YYYY-MM-DD), or None."""
+    if not date_str:
+        return None
+    try:
+        from datetime import date
+        d = date.fromisoformat(str(date_str)[:10])
+        return (d - date.today()).days
+    except Exception:
+        return None
+
+
+app.jinja_env.globals.update(fmt_rev=_fmt_rev, fmt_yoy=_fmt_yoy, days_until=_days_until)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -135,7 +147,74 @@ def dashboard():
     )
 
 
-# ── Ticker API ────────────────────────────────────────────────────────────────
+# ── Server-side form handlers (no JavaScript required) ────────────────────────
+
+@app.route('/tickers/add', methods=['POST'])
+@login_required
+def form_add_ticker():
+    symbol = request.form.get('symbol', '').upper().strip()
+
+    if not symbol or len(symbol) > 10:
+        flash('Please enter a valid ticker symbol (1–10 characters).', 'error')
+        return redirect(url_for('dashboard'))
+
+    from database import get_db
+    with get_db() as conn:
+        try:
+            conn.execute(
+                'INSERT INTO tickers (user_id, symbol) VALUES (?, ?)',
+                (session['user_id'], symbol)
+            )
+            conn.commit()
+            ticker_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+        except Exception as exc:
+            if 'UNIQUE' in str(exc):
+                flash(f'{symbol} is already in your watchlist.', 'error')
+            else:
+                logger.error(f"DB error adding ticker {symbol}: {exc}")
+                flash('Database error — please try again.', 'error')
+            return redirect(url_for('dashboard'))
+
+    # Background scan for the new ticker
+    from scheduler_service import scan_single_ticker
+    threading.Thread(target=scan_single_ticker, args=(ticker_id, symbol), daemon=True).start()
+
+    flash(f'{symbol} added! Earnings data will appear shortly.', 'success')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/tickers/<int:ticker_id>/delete', methods=['POST'])
+@login_required
+def form_delete_ticker(ticker_id):
+    from database import get_db
+    with get_db() as conn:
+        ticker = conn.execute(
+            'SELECT symbol FROM tickers WHERE id = ? AND user_id = ?',
+            (ticker_id, session['user_id'])
+        ).fetchone()
+
+        if not ticker:
+            flash('Ticker not found.', 'error')
+            return redirect(url_for('dashboard'))
+
+        symbol = ticker['symbol']
+        conn.execute('DELETE FROM tickers WHERE id = ?', (ticker_id,))
+        conn.commit()
+
+    flash(f'{symbol} removed from your watchlist.', 'success')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/scan', methods=['POST'])
+@login_required
+def form_trigger_scan():
+    from scheduler_service import scan_earnings_dates
+    threading.Thread(target=scan_earnings_dates, daemon=True).start()
+    flash('Data refresh started — reload the page in a minute to see updated results.', 'success')
+    return redirect(url_for('dashboard'))
+
+
+# ── Ticker API (JSON, kept for future use) ────────────────────────────────────
 
 @app.route('/api/tickers', methods=['POST'])
 @login_required
