@@ -61,25 +61,24 @@ def get_earnings_info(symbol):
                 import pandas as pd
                 cal = ticker.calendar
                 if cal is not None:
+                    raw_ed = None
                     if isinstance(cal, dict):
                         ed = cal.get('Earnings Date')
                         if ed is not None:
-                            if isinstance(ed, (list, tuple)) and len(ed) > 0:
-                                earnings_date = pd.Timestamp(ed[0]).date()
-                            elif hasattr(ed, 'date'):
-                                earnings_date = ed.date()
-                            else:
-                                earnings_date = pd.Timestamp(ed).date()
+                            raw_ed = ed[0] if isinstance(ed, (list, tuple)) and len(ed) > 0 else ed
                     elif hasattr(cal, 'columns') and 'Earnings Date' in cal.columns:
-                        ed = cal['Earnings Date'].iloc[0]
-                        earnings_date = pd.Timestamp(ed).date()
+                        raw_ed = cal['Earnings Date'].iloc[0]
                     elif hasattr(cal, 'loc'):
                         try:
-                            ed = cal.loc['Earnings Date'].iloc[0]
-                            earnings_date = pd.Timestamp(ed).date()
+                            raw_ed = cal.loc['Earnings Date'].iloc[0]
                         except Exception:
                             pass
-                    if earnings_date:
+
+                    if raw_ed is not None:
+                        ts = pd.Timestamp(raw_ed)
+                        if ts.tzinfo is not None:
+                            ts = ts.tz_convert(None)
+                        earnings_date = ts.date()
                         is_confirmed = True
             except Exception as e:
                 logger.debug(f"calendar failed for {symbol}: {e}")
