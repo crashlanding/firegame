@@ -1,240 +1,303 @@
-from flask import Flask, render_template, request, redirect, url_for, session
-import numpy as np
-import matplotlib
-matplotlib.use('Agg')  # Use a non-GUI backend for rendering plots in Flask
-import matplotlib.pyplot as plt
-import io
-import base64
 import os
+import threading
+import logging
 
-# Initialize the Flask application
+from flask import (
+    Flask, render_template, request, redirect,
+    url_for, session, jsonify, flash
+)
+from werkzeug.security import check_password_hash
+from dotenv import load_dotenv
+from functools import wraps
+
+load_dotenv()
+
+# ── App setup ─────────────────────────────────────────────────────────────────
+
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'change-me-in-production-use-long-random-string')
 
-# Set a secret key for session management
-app.secret_key = os.environ.get('SECRET_KEY', 'default_secret_key')
 
-# Define a route
+# ── Jinja2 template helpers ───────────────────────────────────────────────────
+
+def _fmt_rev(amount):
+    """Format a revenue number as a human-readable string."""
+    if amount is None:
+        return '—'
+    abs_v = abs(amount)
+    if abs_v >= 1e12:
+        return f'${amount / 1e12:.2f}T'
+    if abs_v >= 1e9:
+        return f'${amount / 1e9:.2f}B'
+    if abs_v >= 1e6:
+        return f'${amount / 1e6:.2f}M'
+    return f'${amount:,.0f}'
+
+
+def _fmt_yoy(change):
+    """Format a YoY percentage change with directional indicator."""
+    if change is None:
+        return '—'
+    sign  = '+' if change >= 0 else ''
+    arrow = '▲' if change >= 0 else '▼'
+    cls   = 'yoy-up' if change >= 0 else 'yoy-down'
+    return f'<span class="{cls}">{arrow} {sign}{change:.1f}%</span>'
+
+
+app.jinja_env.globals.update(fmt_rev=_fmt_rev, fmt_yoy=_fmt_yoy)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+)
+logger = logging.getLogger(__name__)
+
+
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
 @app.route('/')
-def home():
-    return "Hello, Heroku!"  # Simple test to ensure routing works
-
-# Main entry point for running the app locally
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))  # Use the port provided by Heroku
-    app.run(host='0.0.0.0', port=port)
-
-# Main entry point for running the app locally
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))  # Use the port provided by Heroku
-    app.run(host='0.0.0.0', port=port)
-
-
-
-@app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == 'POST':
-        # Get user inputs from the form
-        portfolio_amount = float(request.form['portfolio_amount'])
-        avg_annual_return = float(request.form['avg_annual_return']) / 100
-        volatility = float(request.form['volatility']) / 100
-        inflation_choice = request.form['inflation']
-        time_horizon = int(request.form['time_horizon'])
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
-        # Set inflation rate based on user choice
-        if inflation_choice == 'random':
-            base_inflation_rate = np.random.uniform(0.01, 0.15)
-        else:
-            base_inflation_rate = float(inflation_choice) / 100
 
-        # Initialize session variables
-        session['starting_portfolio'] = portfolio_amount
-        session['portfolio_amount'] = portfolio_amount
-        session['avg_annual_return'] = avg_annual_return
-        session['volatility'] = volatility
-        session['base_inflation_rate'] = base_inflation_rate
-        session['time_horizon'] = time_horizon
-        session['target_withdrawal'] = 0.05 * portfolio_amount  # 5% initial withdrawal
-        session['total_withdrawn'] = 0
-        session['year'] = 0
-        session['portfolio_values'] = [portfolio_amount]
-        session['withdrawals'] = []
-        session['inflations'] = []
-
-        # Redirect to the yearly simulation page
-        return redirect(url_for('yearly_simulation'))
-    
-    return render_template('index.html')
-
-@app.route('/yearly', methods=['GET', 'POST'])
-def yearly_simulation():
-    # Retrieve session data
-    portfolio_amount = session['portfolio_amount']
-    target_withdrawal = session['target_withdrawal']
-    year = session['year']
-    total_withdrawn = session['total_withdrawn']
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
 
     if request.method == 'POST':
-        withdrawal = float(request.form['withdrawal'])
-        margin_percent = float(request.form['margin_percent']) / 100
+        username = request.form.get('username', '').strip().lower()
+        password = request.form.get('password', '').strip()
 
-        # Update session data with user inputs
-        portfolio_amount -= withdrawal
-        total_withdrawn += withdrawal
-        session['withdrawals'].append(withdrawal)
+        from database import get_db
+        with get_db() as conn:
+            user = conn.execute(
+                'SELECT * FROM users WHERE username = ?', (username,)
+            ).fetchone()
 
-        # Check if portfolio is depleted
-        if portfolio_amount <= 0:
-            return redirect(url_for('game_over', message="Your portfolio has been depleted. Game over!"))
+        if user and check_password_hash(user['password_hash'], password):
+            session.permanent = False
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['email'] = user['email']
+            return redirect(url_for('dashboard'))
 
-        # Calculate the annual return and inflation
-        annual_return = np.random.normal(session['avg_annual_return'], session['volatility'])
-        inflation_rate = np.random.normal(session['base_inflation_rate'], 0.005)
+        flash('Invalid username or password.', 'error')
 
-        # Cap extreme inflation values
-        inflation_rate = max(-0.01, min(inflation_rate, 0.10))
+    return render_template('login.html')
 
-        # Update inflation list
-        session['inflations'].append(inflation_rate)
 
-        # Update target withdrawal for the next year
-        target_withdrawal *= (1 + inflation_rate)
-        session['target_withdrawal'] = target_withdrawal
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
-        # Update portfolio for margin
-        effective_return = annual_return * (1 + margin_percent)
-        new_portfolio_value = portfolio_amount * (1 + effective_return)
 
-        # Check for margin call
-        margined_value = portfolio_amount * (1 + margin_percent)
-        if new_portfolio_value < margined_value * 0.25:
-            return redirect(url_for('game_over', message="Margin call! Your portfolio has been liquidated. Game over!"))
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    from database import get_db
+    with get_db() as conn:
+        tickers = conn.execute('''
+            SELECT  t.id,
+                    t.symbol,
+                    t.added_at,
+                    e.earnings_date,
+                    e.is_confirmed,
+                    e.company_name,
+                    e.last_revenue,
+                    e.prev_year_revenue,
+                    e.revenue_yoy_change,
+                    e.last_scanned
+            FROM    tickers t
+            LEFT JOIN earnings_data e ON t.id = e.ticker_id
+            WHERE   t.user_id = ?
+            ORDER BY t.symbol ASC
+        ''', (session['user_id'],)).fetchall()
 
-        # Update portfolio and session data
-        session['portfolio_amount'] = new_portfolio_value
-        session['portfolio_values'].append(new_portfolio_value)
-
-        # Increment the year counter after processing the current year
-        session['year'] += 1
-
-        # Check if the time horizon has been reached
-        if session['year'] >= session['time_horizon']:
-            # End of simulation
-            return redirect(url_for('results'))
-
-    # Render the yearly simulation page with current values
-    return render_template('yearly.html', data={
-        'year': year + 1,  # Incrementing year for display
-        'portfolio_amount': portfolio_amount,
-        'target_withdrawal': target_withdrawal,
-        'value_on_margin': portfolio_amount * 0.5,  # Example calculation
-        'total_withdrawn': total_withdrawn
-    })
-
-@app.route('/results')
-def results():
-    # Retrieve session data
-    ending_portfolio = session['portfolio_amount']
-    starting_portfolio = session['starting_portfolio']
-    years_played = session['year']
-    
-    # Calculate expected and actual withdrawals
-    total_expected_withdrawals = starting_portfolio * 0.05 * years_played  # Expected 5% withdrawal rate each year
-    total_actual_withdrawals = sum(session['withdrawals'])
-
-    # Determine if a margin call occurred
-    margin_call = any(portfolio_value < 0 for portfolio_value in session['portfolio_values'])
-
-    # Calculate the final score
-    score = calculate_final_score(
-        starting_portfolio,
-        ending_portfolio,
-        total_expected_withdrawals,
-        total_actual_withdrawals,
-        margin_call
+    return render_template(
+        'dashboard.html',
+        tickers=tickers,
+        username=session['username'],
     )
 
-    # Prepare results dictionary
-    results = {
-        'Beginning Portfolio Value': f"${starting_portfolio:,.2f}",
-        'Ending Portfolio Value': f"${ending_portfolio:,.2f}",
-        'Total Actual Withdrawals': f"${total_actual_withdrawals:,.2f}",
-        'Total Expected Withdrawals': f"${total_expected_withdrawals:,.2f}",
-        'Final Score': f"{score:.2f}/100"
-    }
 
-    # Generate Plot
-    plot_url = generate_plot(session['portfolio_values'], years_played)
+# ── Ticker API ────────────────────────────────────────────────────────────────
 
-    # Render the results page
-    return render_template('results.html', results=results, plot_url=plot_url)
+@app.route('/api/tickers', methods=['POST'])
+@login_required
+def add_ticker():
+    data = request.get_json(force=True, silent=True) or {}
+    symbol = data.get('symbol', '').upper().strip()
 
-@app.route('/game_over')
-def game_over():
-    # Retrieve the message to be displayed
-    message = request.args.get('message', 'Game over!')
-    return render_template('game_over.html', message=message)
+    if not symbol:
+        return jsonify({'error': 'Symbol is required.'}), 400
 
-def generate_plot(portfolio_values, years_played):
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(years_played + 1), portfolio_values, marker='o')
-    plt.title("Portfolio Value Over Time")
-    plt.xlabel("Year")
-    plt.ylabel("Portfolio Value ($)")
-    plt.grid(True)
+    if len(symbol) > 10:
+        return jsonify({'error': 'Symbol is too long.'}), 400
 
-    # Save plot to a PNG image in memory
-    img = io.BytesIO()
-    plt.savefig(img, format='png')
-    img.seek(0)
-    plot_url = base64.b64encode(img.getvalue()).decode()
+    from database import get_db
+    with get_db() as conn:
+        try:
+            conn.execute(
+                'INSERT INTO tickers (user_id, symbol) VALUES (?, ?)',
+                (session['user_id'], symbol)
+            )
+            conn.commit()
+            ticker_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+        except Exception as exc:
+            if 'UNIQUE' in str(exc):
+                return jsonify({'error': f'{symbol} is already in your watchlist.'}), 409
+            logger.error(f"DB error adding ticker {symbol}: {exc}")
+            return jsonify({'error': 'Database error.'}), 500
 
-    # Close the plot to free memory
-    plt.close()
+    # Kick off an immediate background scan for this ticker
+    from scheduler_service import scan_single_ticker
+    t = threading.Thread(
+        target=scan_single_ticker,
+        args=(ticker_id, symbol),
+        daemon=True
+    )
+    t.start()
 
-    return f"data:image/png;base64,{plot_url}"
+    return jsonify({'success': True, 'symbol': symbol, 'id': ticker_id})
 
 
-def calculate_final_score(starting_portfolio, ending_portfolio, total_expected_withdrawals, total_actual_withdrawals, margin_call=False):
-    # Base score of 1 if the game ends in failure (margin call or depletion)
-    if margin_call or ending_portfolio <= 0:
-        return 1
+@app.route('/api/tickers/<int:ticker_id>', methods=['DELETE'])
+@login_required
+def delete_ticker(ticker_id):
+    from database import get_db
+    with get_db() as conn:
+        ticker = conn.execute(
+            'SELECT * FROM tickers WHERE id = ? AND user_id = ?',
+            (ticker_id, session['user_id'])
+        ).fetchone()
 
-    # Calculate the return on the portfolio
-    actual_return = (ending_portfolio - starting_portfolio + total_actual_withdrawals) / starting_portfolio
+        if not ticker:
+            return jsonify({'error': 'Ticker not found.'}), 404
 
-    # Calculate the expected portfolio growth without withdrawals
-    expected_return = (total_expected_withdrawals + starting_portfolio) / starting_portfolio
+        conn.execute('DELETE FROM tickers WHERE id = ?', (ticker_id,))
+        conn.commit()
 
-    # Calculate withdrawal performance ratio
-    withdrawal_ratio = total_actual_withdrawals / total_expected_withdrawals
+    return jsonify({'success': True})
 
-    # Score calculation
-    # Base score starts at 50 for meeting expected conditions
-    base_score = 50
 
-    # Adjust based on how much actual withdrawals exceed expected withdrawals
-    if withdrawal_ratio > 1:
-        # Withdrawals exceeded expectations, increase score
-        score = base_score + 50 * (withdrawal_ratio - 1)
-    else:
-        # Withdrawals were less than expected, decrease score
-        score = base_score * withdrawal_ratio
+@app.route('/api/tickers', methods=['GET'])
+@login_required
+def get_tickers():
+    """Return current ticker data as JSON (used to refresh dashboard table)."""
+    from database import get_db
+    with get_db() as conn:
+        rows = conn.execute('''
+            SELECT  t.id,
+                    t.symbol,
+                    e.earnings_date,
+                    e.is_confirmed,
+                    e.company_name,
+                    e.last_revenue,
+                    e.prev_year_revenue,
+                    e.revenue_yoy_change,
+                    e.last_scanned
+            FROM    tickers t
+            LEFT JOIN earnings_data e ON t.id = e.ticker_id
+            WHERE   t.user_id = ?
+            ORDER BY t.symbol ASC
+        ''', (session['user_id'],)).fetchall()
 
-    # Further adjust score based on actual vs expected returns
-    if actual_return > expected_return:
-        score += 10 * (actual_return - expected_return)
-    else:
-        score -= 10 * (expected_return - actual_return)
+    result = []
+    for r in rows:
+        result.append({
+            'id': r['id'],
+            'symbol': r['symbol'],
+            'earnings_date': r['earnings_date'],
+            'is_confirmed': bool(r['is_confirmed']),
+            'company_name': r['company_name'],
+            'last_revenue': r['last_revenue'],
+            'prev_year_revenue': r['prev_year_revenue'],
+            'revenue_yoy_change': r['revenue_yoy_change'],
+            'last_scanned': r['last_scanned'],
+        })
+    return jsonify(result)
 
-    # Normalize score to be between 1 and 100
-    score = max(1, min(100, score))
 
-    return score
+@app.route('/api/scan', methods=['POST'])
+@login_required
+def trigger_scan():
+    """Manually trigger a full earnings scan (runs in background thread)."""
+    from scheduler_service import scan_earnings_dates
+    t = threading.Thread(target=scan_earnings_dates, daemon=True)
+    t.start()
+    return jsonify({'success': True, 'message': 'Scan started in background.'})
+
+
+@app.route('/api/test-email', methods=['POST'])
+@login_required
+def test_email():
+    """Send a test email alert for a given ticker (dev/debug helper)."""
+    from database import get_db
+    from email_service import send_earnings_alert
+    from datetime import date, timedelta
+
+    data = request.get_json(force=True, silent=True) or {}
+    ticker_id = data.get('ticker_id')
+
+    if not ticker_id:
+        return jsonify({'error': 'ticker_id required'}), 400
+
+    with get_db() as conn:
+        row = conn.execute('''
+            SELECT t.symbol, e.*
+            FROM tickers t
+            LEFT JOIN earnings_data e ON t.id = e.ticker_id
+            WHERE t.id = ? AND t.user_id = ?
+        ''', (ticker_id, session['user_id'])).fetchone()
+
+    if not row:
+        return jsonify({'error': 'Ticker not found'}), 404
+
+    earnings_date = date.today() + timedelta(days=5)  # fake date for test
+    success = send_earnings_alert(
+        symbol=row['symbol'],
+        company_name=row['company_name'] or row['symbol'],
+        earnings_date=earnings_date,
+        days_until=5,
+        last_revenue=row['last_revenue'],
+        prev_year_revenue=row['prev_year_revenue'],
+        revenue_yoy_change=row['revenue_yoy_change'],
+    )
+    if success:
+        return jsonify({'success': True, 'message': 'Test email sent.'})
+    return jsonify({'error': 'Email send failed (check SMTP config).'}), 500
+
+
+# ── Bootstrap ─────────────────────────────────────────────────────────────────
+
+def create_app():
+    from database import init_db
+    init_db()
+
+    from scheduler_service import start_scheduler
+    start_scheduler()
+
+    return app
+
+
+# Initialise on import (works with gunicorn and `flask run`)
+create_app()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
-
-import os
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
