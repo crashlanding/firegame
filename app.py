@@ -209,8 +209,8 @@ def form_delete_ticker(ticker_id):
 @login_required
 def form_trigger_scan():
     from scheduler_service import scan_earnings_dates
-    threading.Thread(target=scan_earnings_dates, daemon=True).start()
-    flash('Data refresh started — reload the page in a minute to see updated results.', 'success')
+    scan_earnings_dates()
+    flash('Data refreshed successfully.', 'success')
     return redirect(url_for('dashboard'))
 
 
