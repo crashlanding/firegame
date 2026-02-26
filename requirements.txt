@@ -1,7 +1,7 @@
 Flask==3.0.3
 Werkzeug==3.0.3
 gunicorn==22.0.0
-yfinance==0.2.37
+yfinance>=0.2.50
 APScheduler==3.10.4
 icalendar==5.0.12
 python-dotenv==1.0.1

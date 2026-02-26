@@ -40,7 +40,7 @@ def get_earnings_info(symbol):
                 # Normalise timezone so we can compare with naive now()
                 idx = edf.index
                 if hasattr(idx, 'tz') and idx.tz is not None:
-                    idx = idx.tz_localize(None)
+                    idx = idx.tz_convert(None)
 
                 now = datetime.now()
                 future = edf[idx > now]
@@ -49,7 +49,7 @@ def get_earnings_info(symbol):
                     # earnings_dates is sorted descending; last row = nearest future date
                     raw = future.index[-1]
                     if hasattr(raw, 'tz') and raw.tz is not None:
-                        raw = raw.tz_localize(None)
+                        raw = raw.tz_convert(None)
                     earnings_date = raw.date() if hasattr(raw, 'date') else raw
                     is_confirmed = True
         except Exception as e:
