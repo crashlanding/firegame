@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, Response
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Use a non-GUI backend for rendering plots in Flask
@@ -6,6 +6,11 @@ import matplotlib.pyplot as plt
 import io
 import base64
 import os
+import csv
+import json
+import re
+import zipfile
+from datetime import datetime, timezone
 
 # Initialize the Flask application
 app = Flask(__name__)
@@ -235,6 +240,95 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
 
 import os
+
+# ── Twitter archive export ────────────────────────────────────────────────────
+
+def _parse_tweets_js(text):
+    """Strip the JS variable wrapper and return a list of tweet records."""
+    match = re.search(r'=\s*(\[.*\])\s*$', text, re.DOTALL)
+    if not match:
+        raise ValueError("Unexpected tweets.js format.")
+    return json.loads(match.group(1))
+
+
+def _fmt_date(twitter_date):
+    """Convert Twitter's date string to ISO-8601 UTC."""
+    try:
+        dt = datetime.strptime(twitter_date, "%a %b %d %H:%M:%S +0000 %Y")
+        return dt.replace(tzinfo=timezone.utc).isoformat()
+    except ValueError:
+        return twitter_date
+
+
+def _is_reply(tweet):
+    return bool(
+        (tweet.get("in_reply_to_status_id_str") or "").strip() and
+        (tweet.get("in_reply_to_user_id_str") or "").strip()
+    )
+
+
+def _tweets_from_zip(zip_bytes):
+    """Read all tweets*.js parts from an in-memory ZIP and return tweet dicts."""
+    tweets = []
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        names = sorted(
+            n for n in zf.namelist()
+            if re.search(r'data/tweets.*\.js$', n, re.IGNORECASE)
+        )
+        if not names:
+            raise ValueError(
+                "No tweets*.js files found inside the ZIP. "
+                "Please upload the full Twitter/X data archive."
+            )
+        for name in names:
+            records = _parse_tweets_js(zf.read(name).decode("utf-8"))
+            for record in records:
+                tweets.append(record.get("tweet", record))
+    tweets.sort(key=lambda t: t.get("created_at", ""))
+    return tweets
+
+
+def _build_csv(tweets):
+    """Return tweet data as a UTF-8 CSV string."""
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=[
+        "date", "type", "content", "tweet_id", "reply_to_id"
+    ])
+    writer.writeheader()
+    for t in tweets:
+        writer.writerow({
+            "date":        _fmt_date(t.get("created_at", "")),
+            "type":        "reply" if _is_reply(t) else "original",
+            "content":     " ".join(t.get("full_text", "").split()),
+            "tweet_id":    t.get("id_str", ""),
+            "reply_to_id": t.get("in_reply_to_status_id_str", ""),
+        })
+    return output.getvalue()
+
+
+@app.route("/tweets", methods=["GET", "POST"])
+def tweet_export():
+    if request.method == "POST":
+        uploaded = request.files.get("archive")
+        if not uploaded or uploaded.filename == "":
+            return render_template("tweet_export.html", error="Please select a ZIP file to upload.")
+
+        try:
+            tweets = _tweets_from_zip(uploaded.read())
+        except (ValueError, zipfile.BadZipFile) as exc:
+            return render_template("tweet_export.html", error=str(exc))
+
+        csv_data = _build_csv(tweets)
+        return Response(
+            csv_data,
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=my_tweets.csv"},
+        )
+
+    return render_template("tweet_export.html", error=None)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)

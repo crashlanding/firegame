@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Twitter Archive Exporter</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 700px;
+      margin: 60px auto;
+      padding: 0 20px;
+      color: #1a1a1a;
+      background: #f9f9f9;
+    }
+    h1 { color: #1d9bf0; margin-bottom: 4px; }
+    .subtitle { color: #555; margin-top: 0; margin-bottom: 32px; }
+
+    .steps {
+      background: #fff;
+      border: 1px solid #e1e8ed;
+      border-radius: 12px;
+      padding: 24px 28px;
+      margin-bottom: 28px;
+    }
+    .steps h2 { margin-top: 0; font-size: 1rem; color: #555; text-transform: uppercase; letter-spacing: .05em; }
+    .steps ol { padding-left: 20px; line-height: 1.9; }
+    .steps code { background: #f0f4f8; padding: 1px 6px; border-radius: 4px; font-size: .9em; }
+
+    form {
+      background: #fff;
+      border: 1px solid #e1e8ed;
+      border-radius: 12px;
+      padding: 28px;
+    }
+    label { display: block; font-weight: 600; margin-bottom: 10px; }
+    input[type=file] {
+      width: 100%;
+      padding: 10px;
+      border: 2px dashed #ccd6dd;
+      border-radius: 8px;
+      background: #f7fafc;
+      cursor: pointer;
+      box-sizing: border-box;
+    }
+    input[type=file]:hover { border-color: #1d9bf0; }
+    button {
+      margin-top: 18px;
+      width: 100%;
+      padding: 13px;
+      background: #1d9bf0;
+      color: #fff;
+      border: none;
+      border-radius: 9999px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:hover { background: #1a8cd8; }
+
+    .error {
+      background: #fff0f0;
+      border: 1px solid #fcc;
+      border-radius: 8px;
+      padding: 14px 18px;
+      color: #c00;
+      margin-bottom: 20px;
+    }
+
+    footer { text-align: center; color: #aaa; font-size: .85rem; margin-top: 40px; }
+  </style>
+</head>
+<body>
+  <h1>Twitter Archive Exporter</h1>
+  <p class="subtitle">Convert your Twitter/X data archive into a clean CSV file.</p>
+
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <div class="steps">
+    <h2>Step 1 — Download your archive from Twitter/X</h2>
+    <ol>
+      <li>Go to <strong>Settings &amp; Support → Settings</strong></li>
+      <li>Click <strong>Your Account → Download an archive of your data</strong></li>
+      <li>Confirm your identity and click <strong>Request archive</strong></li>
+      <li>Wait for the email (up to 24 hours), then download the <code>.zip</code> file</li>
+    </ol>
+  </div>
+
+  <form method="POST" enctype="multipart/form-data">
+    <label for="archive">Step 2 — Upload your archive ZIP here</label>
+    <input type="file" id="archive" name="archive" accept=".zip" required />
+    <button type="submit">Export to CSV</button>
+  </form>
+
+  <footer>Your data never leaves your server — the ZIP is processed in memory and discarded.</footer>
+</body>
+</html>
