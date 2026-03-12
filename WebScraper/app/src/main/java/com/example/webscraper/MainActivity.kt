@@ -1,11 +1,9 @@
 package com.example.webscraper
 
 import android.annotation.SuppressLint
-import android.content.ContentValues
-import android.os.Build
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
-import android.os.Environment
-import android.provider.MediaStore
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.webkit.JavascriptInterface
@@ -21,13 +19,8 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import java.io.File
-import java.io.FileOutputStream
-import java.io.OutputStreamWriter
-import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+
+private const val CHATGPT_PACKAGE = "com.openai.chatgpt"
 
 class MainActivity : AppCompatActivity() {
 
@@ -74,12 +67,10 @@ class MainActivity : AppCompatActivity() {
                 // Once the page is fully loaded, inject JS to extract all visible text
                 view?.evaluateJavascript("""
                     (function() {
-                        // Remove script and style elements so we don't grab code
                         var clones = document.documentElement.cloneNode(true);
                         var scripts = clones.querySelectorAll('script, style, noscript, head');
                         scripts.forEach(function(el) { el.remove(); });
                         var rawText = clones.innerText || clones.textContent || '';
-                        // Clean up excessive whitespace
                         var cleaned = rawText.replace(/\r\n/g, '\n')
                                             .replace(/\r/g, '\n')
                                             .replace(/\n{3,}/g, '\n\n')
@@ -113,6 +104,36 @@ class MainActivity : AppCompatActivity() {
                 true
             } else false
         }
+
+        // If launched from a browser's share sheet, grab the shared URL and
+        // start scraping immediately — no extra taps needed.
+        handleShareIntent(intent)
+    }
+
+    /**
+     * Called when the activity is already running and the user shares another
+     * URL to it (singleTop / singleTask reuse scenario).
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    /**
+     * Extracts a URL from an ACTION_SEND intent (e.g. from Chrome's share sheet)
+     * and begins scraping it automatically.
+     */
+    private fun handleShareIntent(intent: Intent) {
+        if (intent.action != Intent.ACTION_SEND) return
+        if (intent.type != "text/plain") return
+
+        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+        // Browsers typically share the raw URL as EXTRA_TEXT
+        val url = sharedText.trim()
+        if (url.isNotEmpty()) {
+            urlInput.setText(url)
+            startScrape()
+        }
     }
 
     private fun startScrape() {
@@ -124,7 +145,7 @@ class MainActivity : AppCompatActivity() {
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             url = "https://$url"
         }
-        setBusy("Loading page...")
+        setBusy("Loading page…")
         webView.loadUrl(url)
     }
 
@@ -149,56 +170,38 @@ class MainActivity : AppCompatActivity() {
                     statusText.text = "Page loaded but no text was found."
                     return@runOnUiThread
                 }
-                saveTextFile(text, pageTitle)
+                sendToChatGpt(text, pageTitle)
             }
         }
     }
 
-    private fun saveTextFile(text: String, pageTitle: String) {
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val safeTitle = pageTitle
-            .replace(Regex("[^a-zA-Z0-9_\\- ]"), "")
-            .trim()
-            .take(40)
-            .ifEmpty { "webpage" }
-        val fileName = "${safeTitle}_$timestamp.txt"
+    /**
+     * Sends the scraped text to the ChatGPT app if installed, otherwise falls
+     * back to the standard Android share sheet so the user can pick any app.
+     */
+    private fun sendToChatGpt(text: String, pageTitle: String) {
+        val label = pageTitle.ifBlank { urlInput.text.toString() }
+        statusText.text = "Scraped ${text.length} characters from \"$label\". Sending…"
 
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Android 10+: use MediaStore to save into Downloads
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                    put(MediaStore.Downloads.MIME_TYPE, "text/plain")
-                    put(MediaStore.Downloads.IS_PENDING, 1)
-                }
-                val resolver = contentResolver
-                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                    ?: throw Exception("Could not create file in Downloads")
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
 
-                resolver.openOutputStream(uri)?.use { stream ->
-                    OutputStreamWriter(stream, Charsets.UTF_8).use { it.write(text) }
-                }
+        val chatGptInstalled = try {
+            packageManager.getPackageInfo(CHATGPT_PACKAGE, 0)
+            true
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
 
-                values.clear()
-                values.put(MediaStore.Downloads.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
-            } else {
-                // Android 9 and below: write directly to Downloads folder
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_DOWNLOADS
-                )
-                downloadsDir.mkdirs()
-                val file = File(downloadsDir, fileName)
-                FileOutputStream(file).use { fos ->
-                    OutputStreamWriter(fos, Charsets.UTF_8).use { it.write(text) }
-                }
-            }
-
-            statusText.text = "Saved to Downloads/$fileName\n(${text.length} characters)"
-            Toast.makeText(this, "Saved: $fileName", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            statusText.text = "Error saving file: ${e.message}"
-            Toast.makeText(this, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
+        if (chatGptInstalled) {
+            // Target ChatGPT directly — no chooser dialog shown
+            sendIntent.setPackage(CHATGPT_PACKAGE)
+            startActivity(sendIntent)
+        } else {
+            // ChatGPT not installed: let the user pick from all share targets
+            startActivity(Intent.createChooser(sendIntent, "Send scraped text to…"))
         }
     }
 
@@ -206,6 +209,7 @@ class MainActivity : AppCompatActivity() {
         if (webView.canGoBack()) {
             webView.goBack()
         } else {
+            @Suppress("DEPRECATION")
             super.onBackPressed()
         }
     }

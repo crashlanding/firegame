@@ -25,10 +25,24 @@
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
+
+            <!-- Normal launcher entry -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+                Share-target entry: appears as "Scrape as Text" in the Android
+                share sheet when the user shares a URL from Chrome or any other
+                app that sends plain text / URLs via ACTION_SEND.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
         </activity>
 
     </application>
