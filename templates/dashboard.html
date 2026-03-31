@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Earnings Alerts — Watchlist</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dashboard-page">
+
+  <!-- ── Navbar ──────────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="navbar-inner">
+      <a class="navbar-brand" href="{{ url_for('dashboard') }}">
+        <span class="brand-icon">📊</span> Earnings Alerts
+      </a>
+      <div class="navbar-right">
+        <span class="navbar-user">👤 {{ username }}</span>
+        <a class="btn btn-outline-sm" href="{{ url_for('logout') }}">Sign Out</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Main ────────────────────────────────────────────────────────────── -->
+  <main class="main-content">
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <!-- Add ticker -->
+    <section class="card add-card">
+      <h2 class="card-title">Add Stock Ticker</h2>
+      <form method="POST" action="{{ url_for('form_add_ticker') }}" class="add-form">
+        <div class="add-input-row">
+          <input
+            class="form-control ticker-input"
+            type="text"
+            name="symbol"
+            placeholder="e.g. AAPL, MSFT, NVDA"
+            maxlength="10"
+            autocapitalize="characters"
+            spellcheck="false"
+            autocomplete="off"
+          >
+          <button class="btn btn-primary" type="submit">+ Add</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Watchlist table -->
+    <section class="card">
+      <div class="card-header-row">
+        <h2 class="card-title">Your Watchlist</h2>
+        <form method="POST" action="{{ url_for('form_trigger_scan') }}">
+          <button class="btn btn-outline-sm" type="submit">🔄 Refresh Data</button>
+        </form>
+      </div>
+
+      {% if tickers %}
+        <div class="table-wrapper">
+          <table class="ticker-table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Company</th>
+                <th>Earnings Date</th>
+                <th>Days Away</th>
+                <th>Last Qtr Revenue</th>
+                <th>Prev Year Revenue</th>
+                <th>YoY Change</th>
+                <th>Last Scanned</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in tickers %}
+                {% set d = days_until(t.earnings_date) %}
+                <tr>
+                  <td><span class="ticker-badge">{{ t.symbol }}</span></td>
+                  <td class="company-name">{{ t.company_name or '—' }}</td>
+                  <td>{{ t.earnings_date or '—' }}</td>
+                  <td>
+                    {% if d is none %}
+                      <span class="na">—</span>
+                    {% elif d < 0 %}
+                      <span class="days-past">{{ d|abs }}d ago</span>
+                    {% elif d == 0 %}
+                      <span class="days-today">Today</span>
+                    {% elif d <= 10 %}
+                      <span class="days-soon">{{ d }}d</span>
+                    {% else %}
+                      <span class="days-ok">{{ d }}d</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ fmt_rev(t.last_revenue) }}</td>
+                  <td>{{ fmt_rev(t.prev_year_revenue) }}</td>
+                  <td>{{ fmt_yoy(t.revenue_yoy_change) | safe }}</td>
+                  <td class="scanned-col">{{ (t.last_scanned or '')[:10] or '—' }}</td>
+                  <td>
+                    <form method="POST"
+                          action="{{ url_for('form_delete_ticker', ticker_id=t.id) }}"
+                          onsubmit="return confirm('Remove {{ t.symbol }} from your watchlist?')">
+                      <button class="btn btn-danger-sm" type="submit">Delete</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-icon">📋</div>
+          <p>No tickers yet — add your first stock above.</p>
+        </div>
+      {% endif %}
+    </section>
+
+    <p class="info-note">
+      ℹ️ Earnings data refreshes automatically every 15 days.<br>
+      Email alerts with a calendar invite (.ics) are sent 10 days before each earnings date.
+    </p>
+
+  </main>
+
+</body>
+</html>

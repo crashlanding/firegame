@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Earnings Alerts — Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="auth-page">
+
+  <div class="auth-card">
+
+    <div class="auth-logo">
+      <div class="auth-logo-icon">📊</div>
+      <h1 class="auth-title">Earnings Alerts</h1>
+      <p class="auth-subtitle">Sign in to manage your watchlist</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form class="auth-form" method="POST" action="{{ url_for('login') }}">
+      <div class="form-group">
+        <label class="form-label" for="username">Username</label>
+        <input
+          class="form-control"
+          type="text"
+          id="username"
+          name="username"
+          placeholder="Enter your username"
+          autocomplete="username"
+          required
+          autofocus
+        >
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <div class="password-wrapper">
+          <input
+            class="form-control"
+            type="password"
+            id="password"
+            name="password"
+            placeholder="Enter your password"
+            autocomplete="current-password"
+            required
+          >
+          <button type="button" class="password-toggle" aria-label="Toggle password visibility"
+                  onclick="togglePassword()">👁</button>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-block" type="submit">Sign In</button>
+    </form>
+
+  </div>
+
+  <script>
+    function togglePassword() {
+      const pwd = document.getElementById('password');
+      pwd.type = pwd.type === 'password' ? 'text' : 'password';
+    }
+  </script>
+</body>
+</html>
